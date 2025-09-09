@@ -3,7 +3,7 @@ KEY="$HOME/.ssh/id_ed25519_codespaces"
 mkdir -p ~/.ssh
 
 if [ ! -f "$KEY" ]; then
-  echo "$SIGNING_KEY" > "$KEY"
+  echo "$FLEXAI_CODESPACES" > "$KEY"
   chmod 600 "$KEY"
 fi
 
