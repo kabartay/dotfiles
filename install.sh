@@ -1,53 +1,28 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Path to key
-KEY="$HOME/.ssh/id_ed25519"
+if [[ -n "${SSH_SIGNING_KEY:-}" ]]; then
+  mkdir -p ~/.ssh && chmod 700 ~/.ssh
 
-mkdir -p ~/.ssh
+  # write keys from Codespaces secrets
+  printf '%s\n' "$SSH_SIGNING_KEY" > ~/.ssh/id_ed25519
+  chmod 600 ~/.ssh/id_ed25519_signing
 
-# Restore private key from secret
-echo "$FLEXAI_CODESPACES" > "$KEY"
-chmod 600 "$KEY"
+  if [[ -n "${SSH_SIGNING_PUB:-}" ]]; then
+    printf '%s\n' "$SSH_SIGNING_PUB" > ~/.ssh/id_ed25519.pub
+  else
+    ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+  fi
+  chmod 644 ~/.ssh/id_ed25519.pub
 
-# If you have a public key secret
-if [ -n "${FLEXAI_CODESPACES_PUB:-}" ]; then
-  echo "$FLEXAI_CODESPACES_PUB" > "${KEY}.pub"
-else
-  # Derive .pub from private key if not provided
-  ssh-keygen -y -f "$KEY" > "${KEY}.pub"
+  # optional: load into agent for convenience
+  eval "$(ssh-agent -s)"
+  ssh-add ~/.ssh/id_ed25519 || true
+
+  # tell Git to sign with SSH, globally
+  git config --global gpg.format ssh
+  git config --global user.signingkey ~/.ssh/id_ed25519.pub
+  git config --global commit.gpgsign true
+  git config --global tag.gpgSign true
 fi
 
-# ------------------------------
-# Git identity from secrets
-# ------------------------------
-# Must be set in Codespaces secrets: FLEXAI_GIT_EMAIL (required), FLEXAI_GIT_NAME (optional)
-if [ -n "${FLEXAI_GIT_EMAIL:-}" ]; then
-  git config --global user.email "$FLEXAI_GIT_EMAIL"
-else
-  echo "❌ FLEXAI_GIT_EMAIL secret not set — commits won’t verify"
-  exit 1
-fi
-
-if [ -n "${FLEXAI_GIT_NAME:-}" ]; then
-  git config --global user.name "$FLEXAI_GIT_NAME"
-else
-  git config --global user.name "Codespaces User"
-fi
-
-# ------------------------------
-# SSH commit signing setup
-# ------------------------------
-git config --global gpg.format ssh
-git config --global user.signingkey "$KEY"
-git config --global commit.gpgsign true
-git config --global tag.gpgSign true
-
-# ------------------------------
-# Allowed signers file for local verification
-# ------------------------------
-mkdir -p ~/.config/git
-EMAIL="$(git config user.email)"
-PUBKEY="$(cat "${KEY}.pub")"
-echo "${EMAIL} ${PUBKEY}" > ~/.config/git/allowed_signers
-git config --global gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
